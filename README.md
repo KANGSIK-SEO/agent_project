@@ -10,6 +10,10 @@
 art_forgery_verification_agent.py  # 에이전트와 도구 함수가 들어 있는 핵심 파일
 app.py                             # Streamlit 웹 화면
 requirements.txt                   # 필요한 패키지 목록
+data/pigments.json                 # 안료 기준 데이터
+data/condition_patterns.json       # 노화/상태 위험 패턴
+data/provenance_terms.json         # 출처/provenance 위험 표현
+SERVICE_READINESS.md               # 실제 서비스화를 위한 보완 설계
 ```
 
 ## 전체 흐름
@@ -29,6 +33,31 @@ LLM이 필요한 도구 함수 호출
 ```
 
 LLM이 실패해도 `_offline_fallback_report()`가 로컬 도구 함수만 사용해서 기본 리포트를 만들어 줍니다.
+
+## 서비스형 보완 사항
+
+초기 버전은 안료 연도와 위험 키워드가 코드 안에 직접 들어 있었습니다. 현재 버전은 운영 서비스로 확장하기 쉽게 기준 데이터를 `data/` 아래 JSON 파일로 분리했습니다.
+
+```text
+data/pigments.json
+  안료명, 별칭, 상용화 기준 연도, 출처 메모
+
+data/condition_patterns.json
+  새 바니시, 인공 균열, 서명만 선명함 같은 노화/상태 위험 패턴
+
+data/provenance_terms.json
+  private collection, attributed to, 감정서 없음 같은 거래/출처 위험 표현
+```
+
+각 도구 결과에는 아래 필드가 추가됩니다.
+
+```text
+sources        판단에 사용한 기준 데이터 또는 외부 도구
+confidence     현재 입력만으로 본 신뢰도(low/medium/high)
+service_notes  실제 서비스 운영 시 보완해야 할 검수/DB/전문가 리뷰 메모
+```
+
+이 구조는 법적 감정서가 아니라, 전문가 검토 전에 위험 신호와 검증 우선순위를 정리하는 감정 보조 시스템을 목표로 합니다.
 
 ## 가장 중요한 함수: run_once()
 
@@ -471,6 +500,9 @@ ToolResult(
     findings=["발견한 이상 신호"],
     evidence={"근거": "값"},
     next_steps=["다음 검증 단계"],
+    sources=["기준 데이터 또는 외부 도구"],
+    confidence="medium",
+    service_notes=["운영 서비스에서 보완할 점"],
 )
 ```
 
@@ -484,6 +516,9 @@ risk        0-100 사이 위험도
 findings    발견한 이상 신호 목록
 evidence    판단에 사용한 근거 데이터
 next_steps  다음에 해야 할 검증 방법
+sources     판단에 사용한 기준 데이터 또는 외부 도구
+confidence  입력/근거 기준 신뢰도
+service_notes 실제 서비스화를 위한 보완 메모
 ```
 
 ## 설치와 실행
@@ -545,3 +580,7 @@ OPENAI_MODEL=gpt-4o-mini
 ## 주의
 
 이 에이전트는 법적 감정서가 아닙니다. 최종 판단은 원본 실물 조사, 안료 분석, 현미경 조사, UV/IR 촬영, provenance 원본 자료, 공인 감정 절차와 함께 내려야 합니다.
+
+## 실제 서비스로 확장할 때
+
+더 자세한 운영 설계는 `SERVICE_READINESS.md`를 보세요. 핵심은 JSON 기준표를 검수 가능한 DB로 이전하고, 안료/스펙트럼/이미지/provenance 자료마다 출처, 버전, 검수자를 남기는 것입니다.

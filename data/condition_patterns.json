@@ -1,0 +1,50 @@
+[
+  {
+    "patterns": ["새 바니시", "fresh varnish", "new varnish"],
+    "message": "오래된 작품 주장과 표면 바니시의 신선도가 충돌할 수 있습니다.",
+    "risk_delta": 15,
+    "source": "Conservation workflow rule"
+  },
+  {
+    "patterns": ["균열이 이상", "unusual craquelure"],
+    "message": "크라클뤼르 패턴이 건조 시간, 지지체 움직임, 자연 노화와 맞지 않을 수 있습니다.",
+    "risk_delta": 15,
+    "source": "Conservation workflow rule"
+  },
+  {
+    "patterns": ["인공 균열", "artificial craquelure"],
+    "message": "가열, 화학 처리, 물리적 압박으로 만든 위조 노화 가능성이 있습니다.",
+    "risk_delta": 18,
+    "source": "Conservation workflow rule"
+  },
+  {
+    "patterns": ["캔버스는 오래", "old canvas"],
+    "message": "오래된 지지체 위에 최근 물감을 올린 조합 위작 가능성을 점검해야 합니다.",
+    "risk_delta": 15,
+    "source": "Conservation workflow rule"
+  },
+  {
+    "patterns": ["화학약품", "chemical aging"],
+    "message": "인위적 aging 처리 흔적일 수 있습니다.",
+    "risk_delta": 15,
+    "source": "Conservation workflow rule"
+  },
+  {
+    "patterns": ["자외선 반응", "uv reaction"],
+    "message": "UV 형광 반응이 보수재, 바니시, 신구 도막 구분 단서가 됩니다.",
+    "risk_delta": 12,
+    "source": "Conservation workflow rule"
+  },
+  {
+    "patterns": ["스펙트럼 불일치", "spectrum mismatch"],
+    "message": "Raman/FTIR/XRF 스펙트럼이 기준 재료와 다를 수 있습니다.",
+    "risk_delta": 18,
+    "source": "Conservation workflow rule"
+  },
+  {
+    "patterns": ["서명만 선명", "signature unusually clear"],
+    "message": "서명층과 본 도막의 노화가 다르면 사후 서명 가능성이 있습니다.",
+    "risk_delta": 15,
+    "source": "Conservation workflow rule"
+  }
+]

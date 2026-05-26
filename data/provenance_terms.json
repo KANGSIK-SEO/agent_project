@@ -1,0 +1,38 @@
+[
+  {
+    "terms": ["private collection", "개인 소장"],
+    "message": "구체적 소장자 없는 private collection/개인 소장 표기는 출처 공백을 숨길 수 있습니다.",
+    "risk_delta": 18,
+    "source": "Market provenance wording rule"
+  },
+  {
+    "terms": ["attributed to", "추정"],
+    "message": "attributed to/추정 표현은 작가 확정이 아니라 귀속 가능성 표현입니다.",
+    "risk_delta": 18,
+    "source": "Market provenance wording rule"
+  },
+  {
+    "terms": ["style of"],
+    "message": "style of는 작가 본인 작품이라는 뜻이 아닙니다.",
+    "risk_delta": 18,
+    "source": "Market provenance wording rule"
+  },
+  {
+    "terms": ["after"],
+    "message": "after 표기는 원작 이후 제작 또는 모작 가능성을 포함합니다.",
+    "risk_delta": 18,
+    "source": "Market provenance wording rule"
+  },
+  {
+    "terms": ["감정서 없음", "no certificate"],
+    "message": "감정서 부재는 단독 위작 증거는 아니지만 거래 위험을 높입니다.",
+    "risk_delta": 18,
+    "source": "Market provenance wording rule"
+  },
+  {
+    "terms": ["출처 불명", "unknown provenance"],
+    "message": "출처 불명은 강한 시장 리스크입니다.",
+    "risk_delta": 24,
+    "source": "Market provenance wording rule"
+  }
+]

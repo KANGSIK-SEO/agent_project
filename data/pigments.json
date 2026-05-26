@@ -1,0 +1,92 @@
+[
+  {
+    "names": ["lead white", "flake white", "납백"],
+    "introduced_year": -400,
+    "source": "National Gallery technical bulletin / general conservation reference",
+    "notes": "Ancient lead carbonate white pigment; chronology alone rarely proves forgery."
+  },
+  {
+    "names": ["azurite", "석청"],
+    "introduced_year": -300,
+    "source": "General conservation pigment reference",
+    "notes": "Copper carbonate blue pigment used historically in Europe and Asia."
+  },
+  {
+    "names": ["vermilion", "버밀리온"],
+    "introduced_year": 800,
+    "source": "General conservation pigment reference",
+    "notes": "Mercury sulfide pigment known historically; verify natural/synthetic context."
+  },
+  {
+    "names": ["smalt", "스몰트"],
+    "introduced_year": 1500,
+    "source": "General conservation pigment reference",
+    "notes": "Cobalt-containing blue glass pigment common in early modern painting."
+  },
+  {
+    "names": ["prussian blue", "프러시안 블루"],
+    "introduced_year": 1704,
+    "source": "General conservation pigment reference",
+    "notes": "Synthetic iron blue discovered in the early 18th century."
+  },
+  {
+    "names": ["cobalt blue", "코발트 블루"],
+    "introduced_year": 1802,
+    "source": "General conservation pigment reference",
+    "notes": "Commercial 19th-century blue pigment; check artist and region."
+  },
+  {
+    "names": ["emerald green", "에메랄드 그린"],
+    "introduced_year": 1814,
+    "source": "General conservation pigment reference",
+    "notes": "Copper acetoarsenite green; useful as an anachronism signal before 1814."
+  },
+  {
+    "names": ["synthetic ultramarine", "합성 울트라마린"],
+    "introduced_year": 1828,
+    "source": "General conservation pigment reference",
+    "notes": "Industrial synthetic ultramarine became available in the 19th century."
+  },
+  {
+    "names": ["zinc white", "징크 화이트"],
+    "introduced_year": 1834,
+    "source": "General conservation pigment reference",
+    "notes": "Zinc oxide white; use pattern varies by period and medium."
+  },
+  {
+    "names": ["cadmium yellow", "카드뮴 옐로"],
+    "introduced_year": 1840,
+    "source": "General conservation pigment reference",
+    "notes": "Cadmium sulfide yellow; commercial use expanded in the 19th century."
+  },
+  {
+    "names": ["viridian", "비리디언"],
+    "introduced_year": 1859,
+    "source": "General conservation pigment reference",
+    "notes": "Hydrated chromium oxide green introduced in the 19th century."
+  },
+  {
+    "names": ["alizarin crimson", "알리자린 크림슨"],
+    "introduced_year": 1868,
+    "source": "General conservation pigment reference",
+    "notes": "Synthetic alizarin dates to the late 1860s."
+  },
+  {
+    "names": ["titanium white", "티타늄 화이트"],
+    "introduced_year": 1916,
+    "source": "General conservation pigment reference",
+    "notes": "Commercial titanium dioxide white is a strong anachronism signal for pre-20th-century claims."
+  },
+  {
+    "names": ["phthalocyanine blue", "프탈로시아닌 블루"],
+    "introduced_year": 1935,
+    "source": "General conservation pigment reference",
+    "notes": "Modern synthetic organic blue pigment."
+  },
+  {
+    "names": ["quinacridone", "퀴나크리돈"],
+    "introduced_year": 1958,
+    "source": "General conservation pigment reference",
+    "notes": "Modern synthetic organic pigment family."
+  }
+]

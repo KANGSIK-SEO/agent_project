@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import tempfile
 from dataclasses import asdict, dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -20,54 +21,19 @@ from langchain_core.tools import tool
 
 
 APP_DIR = Path(__file__).resolve().parent
+DATA_DIR = APP_DIR / "data"
 ENV_PATH = APP_DIR.parent / ".env"
 load_dotenv(ENV_PATH)
 
 
-PIGMENT_INTRODUCTION_YEARS = {
-    "lead white": -400,
-    "flake white": -400,
-    "납백": -400,
-    "azurite": -300,
-    "석청": -300,
-    "vermilion": 800,
-    "버밀리온": 800,
-    "smalt": 1500,
-    "스몰트": 1500,
-    "prussian blue": 1704,
-    "프러시안 블루": 1704,
-    "cobalt blue": 1802,
-    "코발트 블루": 1802,
-    "emerald green": 1814,
-    "에메랄드 그린": 1814,
-    "synthetic ultramarine": 1828,
-    "합성 울트라마린": 1828,
-    "cadmium yellow": 1840,
-    "카드뮴 옐로": 1840,
-    "zinc white": 1834,
-    "징크 화이트": 1834,
-    "viridian": 1859,
-    "비리디언": 1859,
-    "alizarin crimson": 1868,
-    "알리자린 크림슨": 1868,
-    "titanium white": 1916,
-    "티타늄 화이트": 1916,
-    "phthalocyanine blue": 1935,
-    "프탈로시아닌 블루": 1935,
-    "quinacridone": 1958,
-    "퀴나크리돈": 1958,
-}
-
-SUSPICIOUS_CONDITION_PATTERNS = {
-    "새 바니시": "오래된 작품 주장과 표면 바니시의 신선도가 충돌할 수 있습니다.",
-    "균열이 이상": "크라클뤼르 패턴이 건조 시간, 지지체 움직임, 자연 노화와 맞지 않을 수 있습니다.",
-    "인공 균열": "가열, 화학 처리, 물리적 압박으로 만든 위조 노화 가능성이 있습니다.",
-    "캔버스는 오래": "오래된 지지체 위에 최근 물감을 올린 조합 위작 가능성을 점검해야 합니다.",
-    "화학약품": "인위적 aging 처리 흔적일 수 있습니다.",
-    "자외선 반응": "UV 형광 반응이 보수재, 바니시, 신구 도막 구분 단서가 됩니다.",
-    "스펙트럼 불일치": "Raman/FTIR/XRF 스펙트럼이 기준 재료와 다를 수 있습니다.",
-    "서명만 선명": "서명층과 본 도막의 노화가 다르면 사후 서명 가능성이 있습니다.",
-}
+@lru_cache(maxsize=None)
+def _load_reference_data(filename: str) -> list[dict[str, Any]]:
+    path = DATA_DIR / filename
+    with path.open("r", encoding="utf-8") as file:
+        data = json.load(file)
+    if not isinstance(data, list):
+        raise ValueError(f"{path} must contain a JSON list")
+    return data
 
 
 @dataclass
@@ -77,6 +43,9 @@ class ToolResult:
     findings: list[str]
     evidence: dict[str, Any]
     next_steps: list[str]
+    sources: list[str] | None = None
+    confidence: str = "medium"
+    service_notes: list[str] | None = None
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), ensure_ascii=False, indent=2)
@@ -94,10 +63,23 @@ def _claim_year(text: str) -> int | None:
 def _mentioned_pigments(text: str) -> list[dict[str, Any]]:
     lowered = text.lower()
     found = []
-    for pigment, intro_year in PIGMENT_INTRODUCTION_YEARS.items():
-        if pigment.lower() in lowered:
-            found.append({"pigment": pigment, "introduced_year": intro_year})
+    for item in _load_reference_data("pigments.json"):
+        for pigment in item.get("names", []):
+            if pigment.lower() in lowered:
+                found.append(
+                    {
+                        "pigment": pigment,
+                        "introduced_year": item.get("introduced_year"),
+                        "source": item.get("source"),
+                        "notes": item.get("notes"),
+                    }
+                )
+                break
     return found
+
+
+def _unique_sources(items: list[dict[str, Any]]) -> list[str]:
+    return list(dict.fromkeys(str(item["source"]) for item in items if item.get("source")))
 
 
 @tool
@@ -131,11 +113,16 @@ def check_pigment_anachronism(artwork_description: str) -> str:
         tool="check_pigment_anachronism",
         risk=min(risk, 95),
         findings=findings,
-        evidence={"claim_year": claim_year, "pigments": pigments},
+        evidence={"claim_year": claim_year, "pigments": pigments, "reference_file": "data/pigments.json"},
         next_steps=[
             "Raman 또는 FTIR로 유기/무기 안료 피크를 확인하세요.",
             "XRF로 Ti, Cd, Co, Zn, Cr, Cu 등 핵심 원소를 확인하세요.",
             "도막 단면 분석으로 안료층과 보수층을 구분하세요.",
+        ],
+        sources=_unique_sources(pigments) or ["data/pigments.json"],
+        confidence="medium" if pigments and claim_year else "low",
+        service_notes=[
+            "현재 안료 기준표는 예비 DB입니다. 운영 전에는 항목별 원문 출처 URL과 전문가 검수 상태를 추가하세요.",
         ],
     ).to_json()
 
@@ -145,12 +132,22 @@ def check_condition_and_aging(artwork_description: str) -> str:
     """바니시, 균열, 지지체, 서명, 보수 흔적 등 자연 노화와 맞지 않는 단서를 검사합니다."""
     lowered = artwork_description.lower()
     findings = []
+    matched_rules = []
     risk = 20
 
-    for pattern, message in SUSPICIOUS_CONDITION_PATTERNS.items():
-        if pattern.lower() in lowered:
-            findings.append(message)
-            risk += 15
+    for rule in _load_reference_data("condition_patterns.json"):
+        matched_patterns = [pattern for pattern in rule.get("patterns", []) if pattern.lower() in lowered]
+        if matched_patterns:
+            findings.append(rule["message"])
+            matched_rules.append(
+                {
+                    "patterns": matched_patterns,
+                    "message": rule["message"],
+                    "source": rule.get("source"),
+                    "risk_delta": rule.get("risk_delta", 15),
+                }
+            )
+            risk += int(rule.get("risk_delta", 15))
 
     if "오래" in lowered and ("새" in lowered or "선명" in lowered):
         findings.append("오래된 부분과 새로워 보이는 부분이 함께 언급되어 층위별 분석이 필요합니다.")
@@ -163,11 +160,16 @@ def check_condition_and_aging(artwork_description: str) -> str:
         tool="check_condition_and_aging",
         risk=min(risk, 90),
         findings=findings,
-        evidence={"matched_patterns": [p for p in SUSPICIOUS_CONDITION_PATTERNS if p.lower() in lowered]},
+        evidence={"matched_rules": matched_rules, "reference_file": "data/condition_patterns.json"},
         next_steps=[
             "측광/사광 사진으로 균열 방향과 도막 수축 패턴을 비교하세요.",
             "UV 형광 사진으로 바니시와 보수재 영역을 분리하세요.",
             "현미경으로 균열 안쪽의 오염 축적 여부를 확인하세요.",
+        ],
+        sources=_unique_sources(matched_rules) or ["data/condition_patterns.json"],
+        confidence="medium" if matched_rules else "low",
+        service_notes=[
+            "상태/노화 판단은 텍스트 키워드 기반입니다. 운영 서비스에서는 UV/IR/현미경 이미지와 보존가 검토를 붙이세요.",
         ],
     ).to_json()
 
@@ -177,23 +179,22 @@ def check_provenance_risk(provenance_text: str) -> str:
     """소장 이력, 전시 이력, 감정서, 경매 기록 텍스트에서 출처 위험 신호를 점검합니다."""
     lowered = provenance_text.lower()
     findings = []
+    matched_terms = []
     risk = 10
 
-    weak_terms = {
-        "private collection": "구체적 소장자 없는 private collection 표기는 출처 공백을 숨길 수 있습니다.",
-        "개인 소장": "개인 소장만 있고 기간/소장자/거래 기록이 없으면 provenance 공백입니다.",
-        "attributed to": "attributed to는 작가 확정이 아니라 귀속 추정 표현입니다.",
-        "추정": "추정 표현은 확정 감정이 아닙니다.",
-        "style of": "style of는 작가 본인 작품이라는 뜻이 아닙니다.",
-        "after": "after 표기는 원작 이후 제작 또는 모작 가능성을 포함합니다.",
-        "감정서 없음": "감정서 부재는 단독으로 위작 증거는 아니지만 거래 위험을 높입니다.",
-        "출처 불명": "출처 불명은 강한 시장 리스크입니다.",
-    }
-
-    for term, message in weak_terms.items():
-        if term in lowered:
-            findings.append(message)
-            risk += 18
+    for rule in _load_reference_data("provenance_terms.json"):
+        matches = [term for term in rule.get("terms", []) if term.lower() in lowered]
+        if matches:
+            findings.append(rule["message"])
+            matched_terms.append(
+                {
+                    "terms": matches,
+                    "message": rule["message"],
+                    "source": rule.get("source"),
+                    "risk_delta": rule.get("risk_delta", 18),
+                }
+            )
+            risk += int(rule.get("risk_delta", 18))
 
     years = sorted(set(_years_from_text(provenance_text)))
     if len(years) >= 2:
@@ -212,11 +213,20 @@ def check_provenance_risk(provenance_text: str) -> str:
         tool="check_provenance_risk",
         risk=min(risk, 95),
         findings=findings,
-        evidence={"years": years},
+        evidence={
+            "years": years,
+            "matched_terms": matched_terms,
+            "reference_file": "data/provenance_terms.json",
+        },
         next_steps=[
             "작가 catalogue raisonne 등재 여부를 확인하세요.",
             "전시 도록, 경매 카탈로그, 갤러리 인보이스를 원본 이미지와 대조하세요.",
             "감정서 발행 기관과 서명자의 권위를 확인하세요.",
+        ],
+        sources=_unique_sources(matched_terms) or ["data/provenance_terms.json"],
+        confidence="medium" if matched_terms or years else "low",
+        service_notes=[
+            "운영 서비스에서는 경매/전시/도록 원본 문서와 검수자를 provenance DB에 저장하세요.",
         ],
     ).to_json()
 
@@ -276,6 +286,11 @@ def inspect_image_metadata(image_path: str) -> str:
         next_steps=[
             "원본 촬영 파일, 현미경 사진, UV/IR 사진을 별도로 확보하세요.",
             "작품 전체, 서명, 가장자리, 뒷면, 균열 확대 사진을 같은 조명 조건에서 촬영하세요.",
+        ],
+        sources=["Pillow image metadata reader", "EXIF metadata"],
+        confidence="medium" if path.exists() else "low",
+        service_notes=[
+            "EXIF 부재는 위작 증거가 아니라 촬영 원본성 검토가 제한된다는 신호입니다.",
         ],
     ).to_json()
 
@@ -351,6 +366,11 @@ def call_custom_vision_classifier(image_path: str) -> str:
         next_steps=[
             "분류 결과는 보조 신호입니다. 안료, provenance, 현미경/스펙트럼 결과와 함께 판단하세요.",
             "학습 데이터의 작가/시대/매체 분포가 현재 작품과 맞는지 확인하세요.",
+        ],
+        sources=["Azure Custom Vision Prediction API"],
+        confidence="medium",
+        service_notes=[
+            "운영 서비스에서는 모델 버전, 학습 데이터 범위, 라벨 기준, 평가 지표를 리포트에 저장하세요.",
         ],
     ).to_json()
 
@@ -435,6 +455,11 @@ def run_photoholmes_image_forensics(image_path: str, method: str = "zero") -> st
                 "PhotoHolmes 산출물의 heatmap 또는 localization 결과를 원본 이미지와 대조하세요.",
                 "디지털 조작 신호는 작품 위작 신호가 아니라 이미지 파일 조작 신호로 해석하세요.",
             ],
+            sources=["PhotoHolmes CLI"],
+            confidence="medium" if completed.returncode == 0 else "low",
+            service_notes=[
+                "PhotoHolmes는 디지털 이미지 파일 조작 신호를 보는 외부 도구이며 작품 실물 감정을 대체하지 않습니다.",
+            ],
         ).to_json()
 
 
@@ -499,6 +524,11 @@ def run_artsleuth_analysis(image_path: str, artwork_description: str = "") -> st
             next_steps=[
                 "ArtSleuth 결과를 브러시스트로크, 작풍 귀속, anomaly 신호로 나누어 해석하세요.",
                 "모델 학습 작가/시대/매체가 현재 작품과 맞는지 확인하세요.",
+            ],
+            sources=["ArtSleuth command template"],
+            confidence="medium" if completed.returncode == 0 else "low",
+            service_notes=[
+                "ArtSleuth는 외부 미술 이미지 분석 도구입니다. 운영 전 모델 데이터 범위와 라이선스를 확인하세요.",
             ],
         ).to_json()
 
@@ -569,10 +599,33 @@ def synthesize_risk_score(tool_results_json: str) -> str:
         tool="synthesize_risk_score",
         risk=score,
         findings=findings[:8] or ["종합할 도구 신호가 부족합니다."],
-        evidence={"component_risks": risks},
+        evidence={
+            "component_risks": risks,
+            "component_confidences": [
+                item.get("confidence") for item in payload if isinstance(item, dict) and item.get("confidence")
+            ],
+            "component_sources": [
+                source
+                for item in payload
+                if isinstance(item, dict)
+                for source in (item.get("sources") or [])
+            ],
+        },
         next_steps=[
             "고위험 신호가 나온 항목부터 실험실 검증 순서를 잡으세요.",
             "LLM 판단은 법적 감정서가 아니라 검증 설계와 리스크 요약으로 사용하세요.",
+        ],
+        sources=list(
+            dict.fromkeys(
+                source
+                for item in payload
+                if isinstance(item, dict)
+                for source in (item.get("sources") or [])
+            )
+        ),
+        confidence="medium" if risks else "low",
+        service_notes=[
+            "종합 점수는 우선순위 산정용입니다. 고위험 거래에서는 전문가 리뷰 상태를 별도로 둬야 합니다.",
         ],
     ).to_json()
 
@@ -590,6 +643,8 @@ SYSTEM_PROMPT = """
 - 이미지 경로가 있으면 이미지 메타데이터, Custom Vision, PhotoHolmes, ArtSleuth 도구를 고려한다.
 - PhotoHolmes와 ArtSleuth가 미설치라고 나오면 설치/설정 필요성을 리포트에 간단히 적는다.
 - 도구 결과를 근거로 사용하고, 근거 없는 확신을 만들지 않는다.
+- 도구 결과의 sources, confidence, service_notes를 최종 리포트에 반영한다.
+- 서비스 관점에서 DB 기준표와 외부 도구 결과가 예비 판단임을 명확히 구분한다.
 - 답변은 한국어로 작성한다.
 
 최종 출력 형식:
@@ -598,6 +653,7 @@ SYSTEM_PROMPT = """
 3. 도구가 찾은 핵심 이상신호
 4. 다음 검증 실험/자료 요청
 5. 거래/감정상 주의 문구
+6. 근거 출처와 신뢰도
 """.strip()
 
 
@@ -645,12 +701,22 @@ def _offline_fallback_report(question: str, image_path: str | None, error: Excep
     risks = [int(item.get("risk", 0)) for item in results]
     score = min(95, round(max(risks) * 0.55 + (sum(risks) / len(risks)) * 0.45)) if risks else 35
     findings = [finding for item in results for finding in item.get("findings", [])]
+    source_rows = []
+    for item in results:
+        sources = ", ".join(item.get("sources") or ["출처 미기록"])
+        confidence = item.get("confidence", "unknown")
+        source_rows.append(f"- {item.get('tool', 'unknown')}: risk {item.get('risk')} / confidence {confidence} / sources: {sources}")
     next_steps = []
     for item in results:
         next_steps.extend(item.get("next_steps", []))
+    service_notes = []
+    for item in results:
+        service_notes.extend(item.get("service_notes") or [])
 
     findings_text = "\n".join(f"- {finding}" for finding in findings[:8])
     next_steps_text = "\n".join(f"- {step}" for step in dict.fromkeys(next_steps[:8]))
+    sources_text = "\n".join(source_rows)
+    service_notes_text = "\n".join(f"- {note}" for note in dict.fromkeys(service_notes[:6]))
 
     return f"""1. 한줄 판단
 LLM 호출은 실패했지만 로컬 도구 기준 위작 의심도는 {score}/100입니다.
@@ -666,6 +732,12 @@ LLM 호출은 실패했지만 로컬 도구 기준 위작 의심도는 {score}/1
 
 5. 거래/감정상 주의 문구
 이 결과는 로컬 규칙 기반 예비 점검입니다. 실물 조사와 과학 분석 전에는 진품/위작을 단정하지 마세요.
+
+6. 근거 출처와 신뢰도
+{sources_text}
+
+7. 서비스 보완 메모
+{service_notes_text}
 
 LLM 호출 실패 사유: {error}
 """
