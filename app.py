@@ -5,9 +5,13 @@ import os
 from pathlib import Path
 
 import streamlit as st
+from streamlit.errors import StreamlitSecretNotFoundError
 
-for key, value in st.secrets.items():
-    os.environ.setdefault(key, str(value))
+try:
+    for key, value in st.secrets.items():
+        os.environ.setdefault(key, str(value))
+except StreamlitSecretNotFoundError:
+    pass
 
 from art_forgery_verification_agent import run_once  # noqa: E402
 
