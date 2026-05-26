@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import re
+import shlex
+import shutil
+import subprocess
+import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -351,6 +356,189 @@ def call_custom_vision_classifier(image_path: str) -> str:
 
 
 @tool
+def run_photoholmes_image_forensics(image_path: str, method: str = "zero") -> str:
+    """PhotoHolmes CLI가 설치되어 있으면 디지털 이미지 위조 탐지 분석을 실행합니다."""
+    path = Path(image_path).expanduser()
+    if not path.exists():
+        return ToolResult(
+            tool="run_photoholmes_image_forensics",
+            risk=30,
+            findings=[f"이미지 파일을 찾지 못했습니다: {path}"],
+            evidence={"image_path": str(path)},
+            next_steps=["정확한 로컬 이미지 경로를 다시 입력하세요."],
+        ).to_json()
+
+    executable = shutil.which("photoholmes")
+    if executable is None:
+        return ToolResult(
+            tool="run_photoholmes_image_forensics",
+            risk=20,
+            findings=["PhotoHolmes CLI가 설치되어 있지 않아 이미지 포렌식 분석을 건너뛰었습니다."],
+            evidence={"installed": False, "expected_cli": "photoholmes"},
+            next_steps=[
+                "선택 설치: pip install git+https://github.com/photoholmes/photoholmes.git",
+                "설치 후 다시 실행하면 photoholmes run zero 명령으로 이미지 조작 흔적을 검사합니다.",
+            ],
+        ).to_json()
+
+    with tempfile.TemporaryDirectory(prefix="photoholmes_") as output_dir:
+        command = [executable, "run", method, "--output-folder", output_dir, str(path)]
+        try:
+            completed = subprocess.run(command, capture_output=True, text=True, timeout=180, check=False)
+        except subprocess.TimeoutExpired:
+            return ToolResult(
+                tool="run_photoholmes_image_forensics",
+                risk=45,
+                findings=["PhotoHolmes 분석이 제한 시간 안에 끝나지 않았습니다."],
+                evidence={"command": command},
+                next_steps=["이미지 크기를 줄이거나 더 가벼운 분석 method를 사용하세요."],
+            ).to_json()
+        except Exception as exc:
+            return ToolResult(
+                tool="run_photoholmes_image_forensics",
+                risk=35,
+                findings=[f"PhotoHolmes 실행 실패: {exc}"],
+                evidence={"command": command},
+                next_steps=["PhotoHolmes 설치 상태와 CLI 실행 권한을 확인하세요."],
+            ).to_json()
+
+        output_files = sorted(str(file.relative_to(output_dir)) for file in Path(output_dir).rglob("*") if file.is_file())
+        stdout = completed.stdout.strip()
+        stderr = completed.stderr.strip()
+        findings = []
+        risk = 25
+        if completed.returncode == 0:
+            findings.append("PhotoHolmes 이미지 포렌식 분석이 완료되었습니다.")
+            if output_files:
+                findings.append(f"분석 산출물 {len(output_files)}개가 생성되었습니다.")
+                risk += 10
+        else:
+            findings.append(f"PhotoHolmes가 오류 코드 {completed.returncode}로 종료되었습니다.")
+            risk += 20
+        if stderr:
+            findings.append(f"PhotoHolmes stderr: {stderr[:500]}")
+            risk += 5
+
+        return ToolResult(
+            tool="run_photoholmes_image_forensics",
+            risk=min(risk, 80),
+            findings=findings,
+            evidence={
+                "installed": True,
+                "method": method,
+                "returncode": completed.returncode,
+                "stdout": stdout[:1000],
+                "stderr": stderr[:1000],
+                "output_files": output_files[:30],
+            },
+            next_steps=[
+                "PhotoHolmes 산출물의 heatmap 또는 localization 결과를 원본 이미지와 대조하세요.",
+                "디지털 조작 신호는 작품 위작 신호가 아니라 이미지 파일 조작 신호로 해석하세요.",
+            ],
+        ).to_json()
+
+
+@tool
+def run_artsleuth_analysis(image_path: str, artwork_description: str = "") -> str:
+    """ArtSleuth가 설치되어 있거나 ARTSLEUTH_COMMAND_TEMPLATE이 설정되어 있으면 미술 이미지 분석을 실행합니다."""
+    path = Path(image_path).expanduser()
+    if not path.exists():
+        return ToolResult(
+            tool="run_artsleuth_analysis",
+            risk=30,
+            findings=[f"이미지 파일을 찾지 못했습니다: {path}"],
+            evidence={"image_path": str(path)},
+            next_steps=["정확한 로컬 이미지 경로를 다시 입력하세요."],
+        ).to_json()
+
+    package_available = importlib.util.find_spec("artsleuth") is not None
+    cli = shutil.which("artsleuth")
+    command_template = os.getenv("ARTSLEUTH_COMMAND_TEMPLATE")
+
+    if command_template:
+        command = shlex.split(command_template.format(image_path=str(path), description=artwork_description))
+        try:
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=180,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return ToolResult(
+                tool="run_artsleuth_analysis",
+                risk=45,
+                findings=["ArtSleuth 분석이 제한 시간 안에 끝나지 않았습니다."],
+                evidence={"command_template": command_template},
+                next_steps=["이미지 크기를 줄이거나 ArtSleuth 명령 템플릿을 더 가벼운 분석으로 바꾸세요."],
+            ).to_json()
+        except Exception as exc:
+            return ToolResult(
+                tool="run_artsleuth_analysis",
+                risk=35,
+                findings=[f"ArtSleuth 실행 실패: {exc}"],
+                evidence={"command_template": command_template},
+                next_steps=["ARTSLEUTH_COMMAND_TEMPLATE 값을 확인하세요."],
+            ).to_json()
+
+        findings = ["ArtSleuth 명령 템플릿 실행이 완료되었습니다."]
+        if completed.returncode != 0:
+            findings.append(f"ArtSleuth가 오류 코드 {completed.returncode}로 종료되었습니다.")
+        return ToolResult(
+            tool="run_artsleuth_analysis",
+            risk=35 if completed.returncode == 0 else 55,
+            findings=findings,
+            evidence={
+                "installed_package": package_available,
+                "cli": cli,
+                "returncode": completed.returncode,
+                "stdout": completed.stdout.strip()[:1500],
+                "stderr": completed.stderr.strip()[:1500],
+            },
+            next_steps=[
+                "ArtSleuth 결과를 브러시스트로크, 작풍 귀속, anomaly 신호로 나누어 해석하세요.",
+                "모델 학습 작가/시대/매체가 현재 작품과 맞는지 확인하세요.",
+            ],
+        ).to_json()
+
+    if cli:
+        return ToolResult(
+            tool="run_artsleuth_analysis",
+            risk=25,
+            findings=["ArtSleuth CLI는 감지됐지만 호출 형식이 고정되어 있지 않아 자동 실행하지 않았습니다."],
+            evidence={"installed_package": package_available, "cli": cli},
+            next_steps=[
+                "환경변수 ARTSLEUTH_COMMAND_TEMPLATE을 설정하세요.",
+                "예: ARTSLEUTH_COMMAND_TEMPLATE='artsleuth analyze {image_path}'",
+            ],
+        ).to_json()
+
+    if package_available:
+        return ToolResult(
+            tool="run_artsleuth_analysis",
+            risk=25,
+            findings=["ArtSleuth Python 패키지는 감지됐지만 안정적인 공개 함수 API를 자동 확인하지 못했습니다."],
+            evidence={"installed_package": True, "cli": cli},
+            next_steps=[
+                "패키지 문서에 맞는 CLI 또는 Python 호출을 ARTSLEUTH_COMMAND_TEMPLATE으로 연결하세요.",
+                "예: ARTSLEUTH_COMMAND_TEMPLATE='artsleuth analyze {image_path}'",
+            ],
+        ).to_json()
+
+    return ToolResult(
+        tool="run_artsleuth_analysis",
+        risk=20,
+        findings=["ArtSleuth가 설치되어 있지 않아 미술 이미지 분석을 건너뛰었습니다."],
+        evidence={"installed_package": False, "cli": None},
+        next_steps=[
+            "선택 설치: pip install artsleuth",
+            "설치 후 문서에 맞춰 ARTSLEUTH_COMMAND_TEMPLATE을 설정하면 에이전트 도구로 호출됩니다.",
+        ],
+    ).to_json()
+
+
+@tool
 def synthesize_risk_score(tool_results_json: str) -> str:
     """여러 도구의 JSON 결과를 받아 종합 위험도를 보수적으로 계산합니다."""
     try:
@@ -399,7 +587,8 @@ SYSTEM_PROMPT = """
 규칙:
 - 진품/위작을 단정하지 말고 "위작 의심도"와 "검증 우선순위"로 말한다.
 - 사용자가 작품 설명을 주면 안료, 노화, provenance 도구를 반드시 고려한다.
-- 이미지 경로가 있으면 이미지 메타데이터 도구와 Custom Vision 도구를 고려한다.
+- 이미지 경로가 있으면 이미지 메타데이터, Custom Vision, PhotoHolmes, ArtSleuth 도구를 고려한다.
+- PhotoHolmes와 ArtSleuth가 미설치라고 나오면 설치/설정 필요성을 리포트에 간단히 적는다.
 - 도구 결과를 근거로 사용하고, 근거 없는 확신을 만들지 않는다.
 - 답변은 한국어로 작성한다.
 
@@ -424,6 +613,8 @@ def build_agent():
         check_provenance_risk,
         inspect_image_metadata,
         call_custom_vision_classifier,
+        run_photoholmes_image_forensics,
+        run_artsleuth_analysis,
         synthesize_risk_score,
     ]
     return create_agent(model=_agent_model_name(), tools=tools, system_prompt=SYSTEM_PROMPT)
@@ -444,6 +635,12 @@ def _offline_fallback_report(question: str, image_path: str | None, error: Excep
     ]
     if image_path:
         results.append(_loads_tool_result(inspect_image_metadata.invoke({"image_path": image_path})))
+        results.append(_loads_tool_result(run_photoholmes_image_forensics.invoke({"image_path": image_path})))
+        results.append(
+            _loads_tool_result(
+                run_artsleuth_analysis.invoke({"image_path": image_path, "artwork_description": question})
+            )
+        )
 
     risks = [int(item.get("risk", 0)) for item in results]
     score = min(95, round(max(risks) * 0.55 + (sum(risks) / len(risks)) * 0.45)) if risks else 35

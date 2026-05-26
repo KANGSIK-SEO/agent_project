@@ -1,0 +1,7 @@
+# 선택 기능입니다. 설치하지 않아도 기본 에이전트는 동작합니다.
+
+# ArtSleuth: 미술 이미지 분석/위작 이상치 탐지 계열 패키지
+artsleuth
+
+# PhotoHolmes: 디지털 이미지 위조 포렌식. 현재 GitHub 설치 방식입니다.
+git+https://github.com/photoholmes/photoholmes.git

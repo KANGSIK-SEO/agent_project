@@ -254,7 +254,105 @@ print(result)
 
 이미지 분류 모델은 보조 신호입니다. 안료 분석, provenance, 현미경 사진, UV/IR 사진과 함께 봐야 합니다.
 
-## 도구 함수 6: synthesize_risk_score()
+## 도구 함수 6: run_photoholmes_image_forensics()
+
+```python
+run_photoholmes_image_forensics(image_path: str, method: str = "zero") -> str
+```
+
+### 쉽게 말하면
+
+PhotoHolmes를 이용해 이미지 파일 자체가 조작됐는지 검사하는 도구입니다.
+
+미술품 원본의 진위가 아니라, 업로드된 디지털 이미지에 복사-붙여넣기, 국소 조작, 포렌식 이상 신호가 있는지 보는 보조 분석입니다.
+
+### 설치가 필요한가요?
+
+기본 설치에는 포함하지 않았습니다. 필요할 때만 선택 설치합니다.
+
+```bash
+python -m pip install -r requirements-optional.txt
+```
+
+또는 PhotoHolmes만 직접 설치합니다.
+
+```bash
+python -m pip install git+https://github.com/photoholmes/photoholmes.git
+```
+
+### 사용 예시
+
+```python
+from art_forgery_verification_agent import run_photoholmes_image_forensics
+
+result = run_photoholmes_image_forensics.invoke({
+    "image_path": "/path/to/artwork.jpg",
+    "method": "zero",
+})
+
+print(result)
+```
+
+### 결과 해석
+
+PhotoHolmes 결과는 "작품이 가짜다"가 아니라 "이미지 파일에 조작 흔적이 있을 수 있다"는 신호입니다. 실제 작품 감정에서는 원본 작품, 촬영 원본, 현미경/UV/IR 사진과 함께 봐야 합니다.
+
+## 도구 함수 7: run_artsleuth_analysis()
+
+```python
+run_artsleuth_analysis(image_path: str, artwork_description: str = "") -> str
+```
+
+### 쉽게 말하면
+
+ArtSleuth를 이용해 작풍, 브러시스트로크, anomaly 기반 위작 의심 신호를 확인하기 위한 연결 도구입니다.
+
+### 설치
+
+```bash
+python -m pip install artsleuth
+```
+
+### 중요한 설정
+
+ArtSleuth는 설치 형태나 실행 방식이 환경마다 다를 수 있어서, 이 프로젝트는 명령 템플릿으로 연결합니다.
+
+예를 들어 ArtSleuth CLI가 아래처럼 동작한다고 가정하면:
+
+```bash
+artsleuth analyze /path/to/artwork.jpg
+```
+
+`.env`에 이렇게 넣습니다.
+
+```env
+ARTSLEUTH_COMMAND_TEMPLATE=artsleuth analyze {image_path}
+```
+
+작품 설명까지 함께 넘기고 싶다면 패키지 CLI 문서에 맞춰 템플릿을 조정합니다.
+
+```env
+ARTSLEUTH_COMMAND_TEMPLATE=artsleuth analyze {image_path} --description "{description}"
+```
+
+### 사용 예시
+
+```python
+from art_forgery_verification_agent import run_artsleuth_analysis
+
+result = run_artsleuth_analysis.invoke({
+    "image_path": "/path/to/artwork.jpg",
+    "artwork_description": "19세기 인상주의 유화라고 주장합니다.",
+})
+
+print(result)
+```
+
+### 주의
+
+ArtSleuth 결과는 작풍/이미지 기반 보조 신호입니다. 특정 작가의 진품 여부를 단독으로 확정하지 않습니다. 학습 데이터가 현재 작품의 작가, 시대, 매체와 맞는지 반드시 확인해야 합니다.
+
+## 도구 함수 8: synthesize_risk_score()
 
 ```python
 synthesize_risk_score(tool_results_json: str) -> str
@@ -271,6 +369,7 @@ import json
 from art_forgery_verification_agent import (
     check_pigment_anachronism,
     check_condition_and_aging,
+    run_photoholmes_image_forensics,
     synthesize_risk_score,
 )
 
@@ -282,8 +381,15 @@ aging = check_condition_and_aging.invoke({
     "artwork_description": "새 바니시가 있고 서명만 선명합니다."
 })
 
+photo = run_photoholmes_image_forensics.invoke({
+    "image_path": "/path/to/artwork.jpg"
+})
+
 result = synthesize_risk_score.invoke({
-    "tool_results_json": json.dumps([json.loads(pigment), json.loads(aging)], ensure_ascii=False)
+    "tool_results_json": json.dumps(
+        [json.loads(pigment), json.loads(aging), json.loads(photo)],
+        ensure_ascii=False,
+    )
 })
 
 print(result)
@@ -311,6 +417,8 @@ check_condition_and_aging
 check_provenance_risk
 inspect_image_metadata
 call_custom_vision_classifier
+run_photoholmes_image_forensics
+run_artsleuth_analysis
 synthesize_risk_score
 ```
 
@@ -383,6 +491,12 @@ next_steps  다음에 해야 할 검증 방법
 ```bash
 cd "/Users/kangsikseo/Downloads/agent0506/미술감정에이전트(가짜미술품검증)"
 python -m pip install -r requirements.txt
+```
+
+선택 기능인 ArtSleuth와 PhotoHolmes까지 설치하려면:
+
+```bash
+python -m pip install -r requirements-optional.txt
 ```
 
 CLI 실행:
